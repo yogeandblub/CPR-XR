@@ -5,7 +5,7 @@ dispatcher with a spoken summary of what the bystander described, then walks the
 CPR on the real person in front of them, step by step, with markers placed on the person's body.
 A **Practice** mode runs the same protocol on a virtual mannequin.
 
-Built for the Immerse the Bay 2026 hackathon.
+Built for the Immerse the Bay 2026 hackathon. Licensed under the [MIT License](LICENSE).
 
 > **Prototype — not a medical device.** It calls one preset **demo** phone number, never real
 > emergency services. In a real emergency, call your local emergency number yourself.
@@ -26,6 +26,7 @@ Built for the Immerse the Bay 2026 hackathon.
 - [Project layout](#project-layout)
 - [Privacy and safety](#privacy-and-safety)
 - [Credits and licenses](#credits-and-licenses)
+- [License](#license)
 
 ---
 
@@ -322,3 +323,15 @@ ThirdPartyNotices/               third-party licenses
   from Adobe Mixamo; uploaded by **Miss Kanrawee Houdruksa** (ID 664230002, Class 3DMDP, Section 66/45,
   IT.Sci@NPRU, Thailand). Used under a **Creative Commons** license. The model was re-posed in code for
   this project (lying on the back for the practice dummy).
+
+---
+
+## License
+
+This project's own code (everything under `Assets/CPR/` and `bridge/`) is released under the
+**[MIT License](LICENSE)** — Copyright (c) 2026 yogeandblub.
+
+Third-party components keep their own licenses and are **not** covered by the MIT License:
+BlazePose (Apache-2.0), Meta's Passthrough Camera API samples (Oculus SDK License), the Meta XR SDK and
+Unity packages (their respective licenses), and the mannequin model (Creative Commons, see
+[Credits and licenses](#credits-and-licenses)). See `ThirdPartyNotices/` for the full texts.
