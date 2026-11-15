@@ -1,0 +1,29 @@
+Temp/
+UserSettings/
+Library/
+Logs/
+obj/
+Build/
+Builds/
+.vs/
+.vsconfig
+*.csproj
+*.sln
+/.utmp
+*.zip
+*.apk
+RuntimeActionBindings.json
+RuntimeActionBindings.json.meta
+ProjectSettings\Packages\com.unity.testtools.codecoverage\Settings.json
+PerformanceTestRun*.*
+StreamingAssets*
+buildInfo.txt
+Packages/packages-lock.json
+
+# local tooling
+.vscode/
+*.slnx
+*_BurstDebugInformation_DoNotShip/
+
+# headset test logs and pulled hand poses (large, local)
+TestLogs/
