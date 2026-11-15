@@ -29,6 +29,7 @@ namespace CPR
         readonly Vector3[] m_LocalJoints = new Vector3[33];
         readonly Vector3[] m_WorldJoints = new Vector3[33];
         Vector3 m_LocalCrown;
+        GameObject m_Model;        // realistic model (null = capsule figure)
         float m_Length, m_HalfThickness, m_FloorY;
 
         // BlazePose indices used to build the figure.
@@ -76,6 +77,14 @@ namespace CPR
             if (pose != null) pose.ClearVirtualPatient();
             CurrentClass = PoseOverlayTest.BodyClass.Unknown;
         }
+
+        /// <summary>The figure's root: +Z toward its head, on its surface.</summary>
+        public Transform Root => m_Root;
+
+        /// <summary>Show or hide the dummy's body (its joints keep feeding the CPR logic).</summary>
+        public void SetBodyVisible(bool visible) { if (m_Body != null) m_Body.gameObject.SetActive(visible); }
+        /// <summary>Crown-to-heel length (m).</summary>
+        public float BodyLength => m_Length;
 
         /// <summary>World position of the figure (center, on its surface).</summary>
         public Vector3 RootPosition => m_Root != null ? m_Root.position : default;
@@ -145,10 +154,35 @@ namespace CPR
 
         void Set(int i, float x, float y, float z) => m_LocalJoints[i] = new Vector3(x, y, z);
 
+        /// <summary>
+        /// The CPR logic puts the compression disc at 2 x half-thickness above the floor. Measure the model's
+        /// real chest top at the compression point and lift the joints so the disc sits just on top of it.
+        /// </summary>
+        void FitJointsToModel()
+        {
+            var fraction = CurrentClass == PoseOverlayTest.BodyClass.Infant ? 0.33f : CurrentClass == PoseOverlayTest.BodyClass.Child ? 0.30f : 0.28f;
+            var chestZ = m_LocalCrown.z - fraction * m_Length;
+            var top = MannequinModel.SurfaceHeight(m_Model, 0f, chestZ, 0.06f * m_Length / adultLength + 0.01f);
+            if (float.IsInfinity(top) || top <= 0f) return;
+            var newHalf = 0.5f * (top + chestLift);
+            var dy = newHalf - m_HalfThickness;
+            for (var i = 0; i < 33; i++) m_LocalJoints[i] += Vector3.up * dy;
+            m_LocalCrown += Vector3.up * dy;
+            m_HalfThickness = newHalf;
+            Debug.Log($"CPRPractice: model chest top {top * 100f:F1} cm - disc at {2f * newHalf * 100f:F1} cm");
+        }
+
+        [Tooltip("How far above the model's chest surface the compression disc sits (m).")]
+        public float chestLift = 0.015f;
+
         // ---------- Look: same soft aura as the real-patient outline ----------
 
         void BuildAura()
         {
+            // Realistic model lying on its back (same layout as the joints: crown at +L/2, back on y = 0);
+            // the glowing capsule figure is only the fallback if the model isn't available.
+            m_Model = MannequinModel.Create(m_Body, MannequinModel.Pose.Supine, m_Length);
+            if (m_Model != null) { FitJointsToModel(); return; }
             var size = m_Length / adultLength;
             var shoulderMid = 0.5f * (m_LocalJoints[L_SHOULDER] + m_LocalJoints[R_SHOULDER]);
             var hipMid = 0.5f * (m_LocalJoints[L_HIP] + m_LocalJoints[R_HIP]);

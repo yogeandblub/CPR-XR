@@ -41,9 +41,9 @@ namespace CPR
         public float zoneHeight = 0.25f;
         [Header("Stroke detection")]
         [Tooltip("Hands must move this far (m) to start/end a stroke - filters tracking jitter.")]
-        public float strokeStart = 0.012f;
+        public float strokeStart = 0.006f; // very sensitive: light pushes count
         [Tooltip("Strokes shallower than this (m) aren't counted as compressions.")]
-        public float minStroke = 0.025f;
+        public float minStroke = 0.01f;
         [Tooltip("Deeper than target + this (m) = too deep (adults: about 6 cm).")]
         public float tooDeepMargin = 0.012f;
         [Tooltip("Next stroke must start within this (m) of the previous peak = full chest recoil.")]
@@ -79,6 +79,16 @@ namespace CPR
         /// <summary>Posture feedback from the last compression, e.g. "lock your elbows".</summary>
         public string LastPostureFeedback { get; private set; } = "";
         public bool HandsInZone { get; private set; }
+        /// <summary>Depth of the last counted compression (m).</summary>
+        public float LastDepth { get; private set; }
+        /// <summary>Target depth for the current patient class (m).</summary>
+        public float CurrentTargetDepth => TargetDepth;
+        /// <summary>Time of the last counted compression (Time.time), -1 if none.</summary>
+        public float LastCompressionTime { get; private set; } = -1f;
+        [Tooltip("Post coaching to the world panel (off when the step flow shows its own status).")]
+        public bool postHud = true;
+        /// <summary>Hide the disc entirely (e.g. once the recovery-position step starts).</summary>
+        public bool hidden;
         public int CompressionCount { get; private set; }
         public bool IsPractice { get; private set; }
         /// <summary>Practice requested; waiting for the hands to be held still where the disc should go.</summary>
@@ -249,7 +259,7 @@ namespace CPR
         {
             if (IsPlacingPractice) UpdatePracticePlacement();
             var forward = Vector3.forward;
-            m_Visible = !IsPlacingPractice && TryGetTop(out m_Top, out forward);
+            m_Visible = !hidden && !IsPlacingPractice && TryGetTop(out m_Top, out forward);
             if (!m_Visible)
             {
                 m_Disc.gameObject.SetActive(false);
@@ -287,6 +297,8 @@ namespace CPR
                 forward = m_PracticeForward;
                 return true;
             }
+            // Locked with the figure: stays exactly here even if body tracking drops (hands hide the chest).
+            if (m_Held && FigureLocked) { top = m_HeldTop; forward = m_HeldForward; return true; }
             if (pose == null || !pose.TryGetCompressionPoint(out top)) { top = default; return false; }
 
             // Rescuer kneels in the box beside the patient and faces across the body.
@@ -295,7 +307,33 @@ namespace CPR
             else from = Camera.main != null ? Camera.main.transform.position : top - Vector3.forward;
             var f = Vector3.ProjectOnPlane(top - from, Vector3.up);
             if (f.sqrMagnitude > 1e-4f) forward = f.normalized;
+            HoldWhileHandsOn(ref top, ref forward);
             return true;
+        }
+
+        // ---------- Hold the disc still during CPR ----------
+        // The chest point is re-estimated from the body every frame; hands on the chest hide it and
+        // make it wander. Once the figure is locked (kneel box locked) the disc never moves again until
+        // the figure is reset; before that, hands on the disc also hold it.
+        [Tooltip("Before the figure is locked: keep the disc where it is while hands are on it, until they've been off this long (s).")]
+        public float holdAfterHandsOff = 3f;
+        bool m_Held; Vector3 m_HeldTop, m_HeldForward; float m_LastHandsOnTime = -10f;
+
+        bool FigureLocked => kneel != null &&
+            (kneel.CurrentState == KneelIndicator.State.Locked || kneel.CurrentState == KneelIndicator.State.Kneeling);
+
+        void HoldWhileHandsOn(ref Vector3 top, ref Vector3 forward)
+        {
+            if (HandsInZone) m_LastHandsOnTime = Time.time;
+            var handsOnRecently = Time.time - m_LastHandsOnTime < holdAfterHandsOff;
+            var hold = FigureLocked || handsOnRecently;
+            if (hold && !m_Held) { m_Held = true; m_HeldTop = top; m_HeldForward = forward; Debug.Log($"CPRCompress: disc locked in place ({(FigureLocked ? "figure locked" : "hands on")}) at {top}"); }
+            else if (!hold && m_Held)
+            {
+                m_Held = false;
+                Debug.Log($"CPRCompress: disc released (body estimate had moved {Vector3.Distance(top, m_HeldTop) * 100f:F1} cm while held)");
+            }
+            if (m_Held) { top = m_HeldTop; forward = m_HeldForward; }
         }
 
         // ---------- Compression measurement ----------
@@ -369,6 +407,8 @@ namespace CPR
                                     : tooDeep ? $"last {depth * 100f:F1} cm - a little less deep"
                                     : $"last {depth * 100f:F1} cm - good depth";
             CompressionCount++;
+            LastDepth = depth;
+            LastCompressionTime = Time.time;
             var now = Time.realtimeSinceStartup;
             var rate = m_LastRepTime > 0f ? 60f / (now - m_LastRepTime) : 0f;
             m_LastRepTime = now;
@@ -395,6 +435,7 @@ namespace CPR
 
         void UpdateCoachHud()
         {
+            if (!postHud) { CPRHud.Set("3-coach", null); return; }
             var recent = Time.time - m_LastCoachTime < 4f;
             if (!m_Visible || (!HandsInZone && !recent)) { CPRHud.Set("3-coach", null); return; }
             CPRHud.Set("3-coach", $"Compressions: {CompressionCount}\n{(LastCompressionFeedback == "" ? "push 5 cm, 100-120 per minute" : LastCompressionFeedback)}" +
@@ -481,6 +522,8 @@ namespace CPR
         public void ResetCount()
         {
             CompressionCount = 0;
+            LastDepth = 0f;
+            LastCompressionTime = -1f;
             m_LastRepTime = -1f;
         }
     }

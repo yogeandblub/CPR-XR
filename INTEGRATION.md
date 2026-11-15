@@ -4,9 +4,19 @@ Two separate repositories, side by side:
 
 ```
 ~/Documents/Personal-GitHub/
-├── immerse_the_bay_2026/   team repo: transcript -> facts -> dispatcher briefing (Python, laptop/AWS)
-└── CPR-XR/                 this repo: the Quest 3 Unity app (CPR guidance on the headset)
+├── immerse_the_bay_2026.nosync/   team repo: transcript -> facts -> dispatcher briefing (Python)
+├── QuestCPR-Full.nosync/          team call server: SignalWire call to the demo phone + live voice room
+└── CPR-XR.nosync/                 this repo: the Quest 3 Unity app + bridge/ (laptop side)
 ```
+`.nosync` keeps these folders out of iCloud Drive: syncing a Unity project corrupts its caches and
+creates "... 2" duplicate files that break builds. The bridge finds the team folders with or without it.
+
+## Running (no cable needed)
+1. `QuestCPR-Full.nosync/start.sh` - team call server + its tunnel.
+2. `CPR-XR.nosync/bridge/start_bridge.sh` - speech, summary, call dispatch, live feed (http://localhost:8077/live).
+   It is reachable on the local network (headset finds it by UDP broadcast) and, where the network blocks
+   device-to-device traffic, through its own Cloudflare tunnel whose address is posted scrambled on ntfy.sh.
+   All requests from the headset carry the shared key from bridge/config.json (local file, not in git).
 
 This repo does not modify the team repo. It follows their published contract.
 

@@ -251,7 +251,7 @@ namespace CPR
             textGo.GetComponent<MeshRenderer>().sharedMaterial = font.material;
             m_KneelText.text = kneelText;
             m_KneelText.fontSize = 64;
-            m_KneelText.characterSize = 0.012f;
+            m_KneelText.characterSize = 0.0138f;
             m_KneelText.anchor = TextAnchor.MiddleCenter;
             m_KneelText.fontStyle = FontStyle.Bold;
             m_KneelText.color = textColor;

@@ -64,14 +64,14 @@ namespace CPR
         public float lengthOffset = 0f;
 
         [Header("Compression point: distance from the top of the head, as a fraction of body length")]
-        [Tooltip("Adult: center of the chest ~25% of height down from the crown (~2 head-lengths).")]
-        [Range(0.1f, 0.5f)] public float adultCrownFraction = 0.25f;
-        [Tooltip("Child: center of the chest (children have relatively larger heads).")]
-        [Range(0.1f, 0.5f)] public float childCrownFraction = 0.28f;
+        [Tooltip("Adult: lower half of the breastbone (about the nipple line), ~28% of height down from the crown.")]
+        [Range(0.1f, 0.5f)] public float adultCrownFraction = 0.28f;
+        [Tooltip("Child: lower half of the breastbone (children have relatively larger heads).")]
+        [Range(0.1f, 0.5f)] public float childCrownFraction = 0.30f;
         [Tooltip("Infant: just below the nipple line (head is ~1/4 of an infant's length).")]
         [Range(0.1f, 0.5f)] public float infantCrownFraction = 0.33f;
         [Tooltip("Fallback before the full body has been measured: fraction of shoulder-mid -> hip-mid.")]
-        [Range(0, 0.6f)] public float fallbackTorsoFraction = 0.25f;
+        [Range(0, 0.6f)] public float fallbackTorsoFraction = 0.33f; // lower half of the breastbone
         [Tooltip("How many frames are averaged for the compression point.")]
         public int chestAverageFrames = 15;
 
@@ -113,8 +113,18 @@ namespace CPR
             PatientMode.Adult => BodyClass.Adult,
             PatientMode.Child => BodyClass.Child,
             PatientMode.Infant => BodyClass.Infant,
-            _ => EstimatedClass,
+            _ => LockedClass != BodyClass.Unknown ? LockedClass : EstimatedClass,
         };
+        /// <summary>Size class frozen for the rest of the run (so hands/disc don't switch mid-CPR). Unknown = not locked.</summary>
+        public BodyClass LockedClass { get; private set; } = BodyClass.Unknown;
+
+        /// <summary>Freeze the current size class (Adult if still unknown) until the next reset.</summary>
+        public void LockClass()
+        {
+            if (LockedClass != BodyClass.Unknown) return;
+            LockedClass = EstimatedClass == BodyClass.Unknown ? BodyClass.Adult : EstimatedClass;
+            Debug.Log($"CPRPose: size locked as {LockedClass} for this run");
+        }
         /// <summary>Floor height under the patient (depth-measured when possible).</summary>
         public float FloorY => IsVirtual || !UseEditorSource ? (m_HasFloor ? m_FloorY : floorY) : floorY;
         /// <summary>Direction along the body, shoulders -> hips, flat on the floor.</summary>
@@ -532,7 +542,10 @@ namespace CPR
             var dir = target - m_CameraPos;
             Vector3 surface;
             if (IsVirtual) surface = target + Vector3.up * m_VirtualSurfaceOffset; // mannequin: chest top, no depth ray
-            else if (!TryRaycastWorld(new Ray(m_CameraPos, dir.normalized), out surface, dir.magnitude + 0.3f)) surface = target;
+            // Straight down onto the chest at the body's midline, so the point doesn't slide toward
+            // whichever side the rescuer is looking from; the line-of-sight ray is only a fallback.
+            else if (!TryRaycastWorld(new Ray(target + Vector3.up * 0.4f, Vector3.down), out surface, 0.7f) &&
+                     !TryRaycastWorld(new Ray(m_CameraPos, dir.normalized), out surface, dir.magnitude + 0.3f)) surface = target;
 
             m_ChestSamples.Enqueue(surface);
             m_ChestSum += surface;
@@ -652,6 +665,7 @@ namespace CPR
             m_HasCrown = false;
             m_FreezeRequested = false;
             OnNoPerson(immediate: true);
+            LockedClass = BodyClass.Unknown;
             Debug.Log("CPRPose: reset");
         }
 
@@ -819,7 +833,7 @@ namespace CPR
             m_Label.font = font;
             labelGo.GetComponent<MeshRenderer>().sharedMaterial = font.material;
             m_Label.fontSize = 48;
-            m_Label.characterSize = 0.01f;
+            m_Label.characterSize = 0.0115f;
             m_Label.anchor = TextAnchor.MiddleCenter;
             m_Label.color = Color.white;
             labelGo.SetActive(false);

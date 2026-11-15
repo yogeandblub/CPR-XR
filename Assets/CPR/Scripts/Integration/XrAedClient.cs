@@ -29,12 +29,169 @@ namespace CPR.Integration
 
         [Tooltip("e.g. https://staging.example.com/v1  - empty = offline (log only).")]
         public string baseUrl = "";
+        [Tooltip("Shared key for the laptop bridge on Wi-Fi (bridge/config.json device_key).")]
+        public string deviceKey = "";
         [Tooltip("Set at runtime from a secure source. Never commit a real token.")]
         [NonSerialized] public string bearerToken = "";
         public float timeoutSeconds = 8f;
+        [Tooltip("Create a session automatically when the app starts.")]
+        public bool autoStartSession = true;
 
         public string SessionId { get; private set; }
+        public bool IsOnline => !string.IsNullOrEmpty(baseUrl);
         int m_EventCounter;
+
+        /// <summary>What the laptop bridge heard and extracted from one spoken phrase.</summary>
+        [Serializable]
+        public class SpeechResult
+        {
+            public string transcript;
+            public float confidence;
+            public string[] fact_strings;   // e.g. "patient.responsive=false" (team transcriber facts)
+            public int stt_ms;
+            public string spoken_text;      // the team dispatcher briefing after this line
+            public string error;
+        }
+
+        [Serializable]
+        public class HealthResult { public bool ok; public bool speech_model_ready; public string call_server_url; public bool call_ready; public bool call_mock; public string error; }
+
+        [Serializable]
+        public class DispatchResult { public bool ok; public string announcement; public string call_sid; public bool mock; public string status; public string location_source; public string error; }
+
+        /// <summary>Bridge status, including the call server's current https address.</summary>
+        public void GetHealth(Action<HealthResult> done)
+        {
+            if (!IsOnline) { done?.Invoke(new HealthResult { error = "offline" }); return; }
+            StartCoroutine(GetJson($"{baseUrl.TrimEnd('/')}/health", done));
+        }
+
+        /// <summary>Short summary + coordinates -> the team's demo dispatcher call (bridge -> QuestCPR backend).
+        /// Pass the headset's own location if it has one; otherwise the bridge uses the laptop's.</summary>
+        public void Dispatch(Action<DispatchResult> done, double? lat = null, double? lon = null, float? accuracyM = null, bool practice = false)
+        {
+            if (!HasSession()) return;
+            if (!IsOnline) { Debug.Log("CPRNet: would POST dispatch"); done?.Invoke(new DispatchResult { error = "offline" }); return; }
+            var body = new Json().Obj().Num("latitude", lat).Num("longitude", lon).Num("accuracy_m", accuracyM).Bool("practice", practice).End();
+            StartCoroutine(PostJson($"{baseUrl.TrimEnd('/')}/sessions/{SessionId}/dispatch", body, done, 30));
+        }
+
+        /// <summary>Headset log lines -> bridge/headset.log (debugging without a USB cable).</summary>
+        public void PostLog(string lines)
+        {
+            if (!IsOnline || string.IsNullOrEmpty(lines)) return;
+            StartCoroutine(PostRaw($"{baseUrl.TrimEnd('/')}/log", Encoding.UTF8.GetBytes(lines), "text/plain", 5));
+        }
+
+        bool m_FrameInFlight;
+        /// <summary>One JPEG camera frame for the laptop's live feed. Skipped while the previous one is still sending.</summary>
+        public void PostFrame(byte[] jpg)
+        {
+            if (!IsOnline || m_FrameInFlight || jpg == null) return;
+            m_FrameInFlight = true;
+            StartCoroutine(PostRaw($"{baseUrl.TrimEnd('/')}/feed", jpg, "image/jpeg", 3, err =>
+            {
+                m_FrameInFlight = false;
+                if (err == null) { FramesDelivered++; return; }
+                if (Time.time - m_LastFrameErrorLog > 10f) { m_LastFrameErrorLog = Time.time; Debug.LogWarning($"CPRFeed: frame upload failed ({err})"); }
+            }));
+        }
+        /// <summary>Camera frames the laptop has accepted (live feed).</summary>
+        public int FramesDelivered { get; private set; }
+        float m_LastFrameErrorLog = -100f;
+
+        IEnumerator PostRaw(string url, byte[] data, string contentType, int timeout, Action<string> done = null)
+        {
+            using var req = new UnityWebRequest(url, "POST")
+            {
+                uploadHandler = new UploadHandlerRaw(data),
+                downloadHandler = new DownloadHandlerBuffer(),
+                timeout = timeout,
+            };
+            req.SetRequestHeader("Content-Type", contentType);
+            Auth(req);
+            yield return req.SendWebRequest();
+            done?.Invoke(req.result == UnityWebRequest.Result.Success ? null : $"{req.responseCode} {req.error}");
+        }
+
+        void Auth(UnityWebRequest req)
+        {
+            if (!string.IsNullOrEmpty(deviceKey)) req.SetRequestHeader("X-CPRXR-Key", deviceKey);
+        }
+
+        IEnumerator GetJson<T>(string url, Action<T> done) where T : new()
+        {
+            using var req = UnityWebRequest.Get(url);
+            req.timeout = 5;
+            Auth(req);
+            yield return req.SendWebRequest();
+            done?.Invoke(Parse<T>(req));
+        }
+
+        IEnumerator PostJson<T>(string url, string json, Action<T> done, int timeout) where T : new()
+        {
+            using var req = new UnityWebRequest(url, "POST")
+            {
+                uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json)),
+                downloadHandler = new DownloadHandlerBuffer(),
+                timeout = timeout,
+            };
+            req.SetRequestHeader("Content-Type", "application/json");
+            Auth(req);
+            yield return req.SendWebRequest();
+            done?.Invoke(Parse<T>(req));
+        }
+
+        static T Parse<T>(UnityWebRequest req) where T : new()
+        {
+            var text = req.downloadHandler?.text;
+            if (string.IsNullOrEmpty(text))
+            {
+                var empty = new T();
+                typeof(T).GetField("error")?.SetValue(empty, $"{req.responseCode} {req.error}");
+                return empty;
+            }
+            try { return JsonUtility.FromJson<T>(text); }
+            catch (Exception e) { var bad = new T(); typeof(T).GetField("error")?.SetValue(bad, e.Message); return bad; }
+        }
+
+        void Start()
+        {
+            if (autoStartSession && string.IsNullOrEmpty(SessionId)) CreateSession();
+        }
+
+        /// <summary>
+        /// Bridge-only extension: send one spoken phrase (16 kHz mono PCM16 WAV). The laptop transcribes it
+        /// with the team's local speech-to-text, stores it as their speech_transcript event, and returns the
+        /// transcript + facts their extractor found. Offline: logs and returns nothing.
+        /// </summary>
+        public void PostSpeech(byte[] wav, Action<SpeechResult> done, string source = "operator_report")
+        {
+            if (!HasSession()) return;
+            if (!IsOnline) { Debug.Log($"CPRNet: would POST speech ({wav.Length / 1024} kB)"); return; }
+            StartCoroutine(SpeechRoutine($"{baseUrl.TrimEnd('/')}/sessions/{SessionId}/speech?source={source}", wav, done));
+        }
+
+        IEnumerator SpeechRoutine(string url, byte[] wav, Action<SpeechResult> done)
+        {
+            using var req = new UnityWebRequest(url, "POST")
+            {
+                uploadHandler = new UploadHandlerRaw(wav),
+                downloadHandler = new DownloadHandlerBuffer(),
+                timeout = 20, // transcription takes ~1-2 s on the laptop
+            };
+            req.SetRequestHeader("Content-Type", "audio/wav");
+            Auth(req);
+            yield return req.SendWebRequest();
+            SpeechResult result;
+            if (req.result != UnityWebRequest.Result.Success)
+                result = new SpeechResult { error = $"{req.responseCode} {req.error}" };
+            else
+                try { result = JsonUtility.FromJson<SpeechResult>(req.downloadHandler.text); }
+                catch (Exception e) { result = new SpeechResult { error = "bad response: " + e.Message }; }
+            if (!string.IsNullOrEmpty(result.error)) Debug.LogWarning($"CPRNet: speech failed ({result.error})");
+            done?.Invoke(result);
+        }
 
         // ---------- Public API ----------
 
@@ -141,6 +298,7 @@ namespace CPR.Integration
                 timeout = Mathf.CeilToInt(timeoutSeconds),
             };
             req.SetRequestHeader("Content-Type", "application/json");
+            Auth(req);
             if (!string.IsNullOrEmpty(bearerToken)) req.SetRequestHeader("Authorization", "Bearer " + bearerToken);
             if (!string.IsNullOrEmpty(idempotencyKey)) req.SetRequestHeader("Idempotency-Key", idempotencyKey);
             yield return req.SendWebRequest();

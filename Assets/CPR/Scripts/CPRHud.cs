@@ -19,8 +19,11 @@ namespace CPR
         Transform m_Background;
         bool m_Dirty;
 
-        public float distance = 0.8f;
-        public float belowEye = 0.18f;
+        public float distance = 0.62f;   // ~2 ft
+        public float belowEye = -0.04f;  // just above eye level; the Practice menu sits below it
+
+        /// <summary>Hide the world panel entirely (SOS mode uses the small top-left text HUD instead).</summary>
+        public static bool Hidden;
         public float followSpeed = 3f;
 
         /// <summary>Show (or with null/empty, clear) a line. Optional seconds = auto-clear.</summary>
@@ -36,6 +39,15 @@ namespace CPR
             }
             if (!hud.m_Lines.TryGetValue(channel, out var old) || old != text) { hud.m_Lines[channel] = text; hud.m_Dirty = true; }
             if (seconds > 0f) hud.m_Expiry[channel] = Time.time + seconds; else hud.m_Expiry.Remove(channel);
+        }
+
+        /// <summary>Remove every line (idle = nothing on screen).</summary>
+        public static void ClearAll()
+        {
+            if (s_Instance == null) return;
+            s_Instance.m_Lines.Clear();
+            s_Instance.m_Expiry.Clear();
+            s_Instance.m_Dirty = true;
         }
 
         static CPRHud Instance
@@ -58,7 +70,7 @@ namespace CPR
             m_Text.font = font;
             textGo.GetComponent<MeshRenderer>().sharedMaterial = font.material;
             m_Text.fontSize = 48;
-            m_Text.characterSize = 0.0065f;
+            m_Text.characterSize = 0.0075f;
             m_Text.anchor = TextAnchor.MiddleCenter;
             m_Text.alignment = TextAlignment.Center;
             m_Text.color = Color.white;
@@ -92,10 +104,10 @@ namespace CPR
                 m_Text.text = sb.ToString();
                 var lines = Mathf.Max(1, m_Text.text.Split('\n').Length);
                 var widest = 0; foreach (var l in m_Text.text.Split('\n')) widest = Mathf.Max(widest, l.Length);
-                m_Background.localScale = new Vector3(0.02f + widest * 0.0155f, 0.02f + lines * 0.034f, 1f);
+                m_Background.localScale = new Vector3(0.02f + widest * 0.0178f, 0.02f + lines * 0.039f, 1f);
                 m_Dirty = false;
             }
-            var visible = m_Lines.Count > 0;
+            var visible = m_Lines.Count > 0 && !Hidden;
             m_Text.gameObject.SetActive(visible);
             m_Background.gameObject.SetActive(visible);
             if (!visible) return;

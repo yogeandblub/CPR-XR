@@ -27,3 +27,14 @@ Packages/packages-lock.json
 
 # headset test logs and pulled hand poses (large, local)
 TestLogs/
+
+# laptop bridge: local Python env and session files
+bridge/.venv/
+bridge/sessions/
+bridge/.bin/
+bridge/config.json
+bridge/inject.txt
+
+# private / large (voice transcripts, raw test logs)
+bridge/headset.log
+TestLogs/cpr-logs/

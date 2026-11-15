@@ -25,6 +25,12 @@ namespace CPR
         public KneelIndicator kneel;
         [Tooltip("Only show the ghost hands once the rescuer has knelt (Default & Practice). Off in Pose mode.")]
         public bool requireKneel = true;
+        [Tooltip("Set by the step flow: ghosts stay hidden until 'Check for responsiveness' is done.")]
+        public bool allowShow = true;
+        [Tooltip("Post placement hints to the world panel.")]
+        public bool postHud = true;
+        /// <summary>Plain-language hint for the current hand step (for the SOS text HUD).</summary>
+        public string CurrentHint { get; private set; } = "";
         [Tooltip("A hand matches its ghost when its wrist is within this distance (m).")]
         public float matchTolerance = 0.05f;
         [Tooltip("Extra distance before a matched hand counts as off again (stops flicker).")]
@@ -74,7 +80,7 @@ namespace CPR
         {
             // Default/Practice: ghosts appear only after the rescuer kneels in the kneel spot.
             var kneeling = kneel == null || kneel.CurrentState == KneelIndicator.State.Kneeling;
-            if (disc == null || !disc.TryGetDiscFrame(out var origin, out var rotation) || (requireKneel && !kneeling))
+            if (!allowShow || disc == null || !disc.TryGetDiscFrame(out var origin, out var rotation) || (requireKneel && !kneeling))
             {
                 ShowNone();
                 return;
@@ -124,7 +130,7 @@ namespace CPR
                 }
                 else
                 {
-                    CPRHud.Set("4-form", "GOOD HAND POSITION - keep going");
+                    SetHint("GOOD HAND POSITION - keep going");
                     return;
                 }
             }
@@ -162,7 +168,7 @@ namespace CPR
             else if (m_Step == 0) hint = (two ? "Place your FIRST hand like the ghost (heel of the hand)" : "Place your hand like the ghost")
                                         + (float.IsInfinity(offBy) ? "" : $"\n{offBy * 100f:F0} cm off");
             else hint = "Now lay your OTHER hand on top, fingers interlocked" + (float.IsInfinity(offBy) ? "" : $"\n{offBy * 100f:F0} cm off");
-            CPRHud.Set("4-form", hint);
+            SetHint(hint);
         }
 
         /// <summary>Tracked position, or the last tracked position for trackingGraceSeconds after tracking drops.</summary>
@@ -282,10 +288,17 @@ namespace CPR
             return go;
         }
 
+        void SetHint(string hint)
+        {
+            CurrentHint = hint ?? "";
+            CPRHud.Set("4-form", postHud ? hint : null);
+        }
+
         void ShowNone()
         {
             foreach (var s in m_Steps) { s.visibility = 0f; if (s.hand != null && s.hand.activeSelf) s.hand.SetActive(false); }
             m_Step = 0; m_PendingStep = 0; m_PendingTimer = 0f; m_Locked = false;
+            CurrentHint = "";
             CPRHud.Set("4-form", null);
         }
     }
