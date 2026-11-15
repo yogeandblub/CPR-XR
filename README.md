@@ -291,7 +291,6 @@ bridge/
 Assets/BlazePose/                Unity's BlazePose sample and models
 Assets/PassthroughCameraApiSamples/   Meta's Passthrough Camera API samples (reference)
 ThirdPartyNotices/               third-party licenses
-INTEGRATION.md                   original contract notes with the team pipeline repo
 ```
 
 ---
@@ -319,5 +318,7 @@ INTEGRATION.md                   original contract notes with the team pipeline 
 - **Passthrough Camera API samples:** Meta (Oculus SDK License) — see `ThirdPartyNotices/`.
 - **Meta XR SDK / MR Utility Kit**, **Unity Inference Engine**: under their respective licenses.
 - **Speech-to-text:** faster-whisper (`small.en`).
-- **Mannequin model** (`Assets/CPR/Resources/Mannequin/`): third-party character model; check its
-  license before redistributing.
+- **Mannequin model** (`Assets/CPR/Resources/Mannequin/`): created with **Adobe Mixamo** and downloaded
+  from Adobe Mixamo; uploaded by **Miss Kanrawee Houdruksa** (ID 664230002, Class 3DMDP, Section 66/45,
+  IT.Sci@NPRU, Thailand). Used under a **Creative Commons** license. The model was re-posed in code for
+  this project (lying on the back for the practice dummy).
